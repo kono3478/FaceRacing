@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>FACE DRIVE GP - iPhone全画面エディション</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        :root {
+            --sat: env(safe-area-inset-top, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+        }
+        * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+            background-color: #050811;
+            color: #f8fafc;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            touch-action: none;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .safe-top {
+            padding-top: max(8px, var(--sat));
+            padding-left: max(12px, var(--sal));
+            padding-right: max(12px, var(--sar));
+        }
+        .safe-bottom {
+            padding-bottom: max(10px, var(--sab));
+            padding-left: max(12px, var(--sal));
+            padding-right: max(12px, var(--sar));
+        }
+        .glass-bar {
+            background: rgba(10, 15, 29, 0.92);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Custom iOS-style Range Input */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #1e293b;
+            height: 8px;
+            border-radius: 999px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #22d3ee;
+            cursor: pointer;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.9);
+            border: 2px solid #ffffff;
+        }
+    </style>
+</head>
+<body class="flex flex-col w-full h-[100dvh] overflow-hidden bg-[#050811]">
+
+    <!-- 1. TOP TELEMETRY & ACTION BAR (Separated from canvas so it never blocks road view) -->
+    <header class="glass-bar safe-top pb-2 border-b border-slate-800/90 z-30 shrink-0">
+        <div class="max-w-5xl mx-auto flex items-center justify-between gap-2">
+            <!-- Left: Score & Shield -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1 min-w-[78px]">
+                    <div class="flex items-center justify-between text-[9px] text-slate-400 font-bold tracking-wider">
+                        <span>SCORE</span>
+                        <span id="hudDistance" class="text-cyan-400 mono">0.0km</span>
+                    </div>
+                    <div id="hudScore" class="text-sm sm:text-base font-black mono text-white leading-tight">0</div>
+                </div>
+
+                <!-- Shield Bar -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1.5 w-24 sm:w-32">
+                    <div class="flex items-center justify-between text-[9px] font-bold mb-1">
+                        <span class="text-emerald-400 flex items-center gap-0.5"><i class="ph-fill ph-shield-check"></i>SHIELD</span>
+                        <span id="hudShieldText" class="mono text-emerald-300">100%</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                        <div id="hudShieldBar" class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-150" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center: Speedometer -->
+            <div class="flex items-baseline gap-1 bg-slate-900/95 border border-cyan-500/30 rounded-xl px-3 py-1 shadow-inner">
+                <span id="hudSpeed" class="text-xl sm:text-2xl font-black mono text-white tracking-tight">0</span>
+                <span class="text-[10px] font-bold text-cyan-400">km/h</span>
+            </div>
+
+            <!-- Right: Quick iPhone Controls (Calibrate, Camera, Settings) -->
+            <div class="flex items-center gap-1.5">
+                <button id="calibrateBtn" class="h-9 px-2.5 rounded-xl bg-slate-800/90 active:bg-slate-700 text-cyan-300 border border-slate-700 flex items-center gap-1 text-xs font-bold transition active:scale-95" title="現在の顔の角度を正面(0°)にリセット">
+                    <i class="ph-bold ph-crosshair text-base"></i>
+                    <span class="hidden sm:inline">正面リセット</span>
+                </button>
+
+                <button id="startCamBtn" class="h-9 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20 flex items-center gap-1 text-xs font-bold transition active:scale-95">
+                    <i id="camBtnIcon" class="ph-bold ph-video-camera text-base"></i>
+                    <span id="startCamText" class="hidden md:inline">カメラON</span>
+                </button>
+
+                <button id="openSettingsBtn" class="w-9 h-9 rounded-xl bg-slate-800/90 active:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition active:scale-95" title="感度・反転・サウンド設定">
+                    <i class="ph-bold ph-sliders-horizontal text-base"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 2. MAIN UNOBSTRUCTED GAME CANVAS AREA (Takes all available vertical height) -->
+    <main class="relative flex-1 w-full overflow-hidden bg-[#060b16]">
+        <!-- Top-View Racing Canvas -->
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+
+        <!-- Compact Floating PiP Face Monitor (Top-Left corner, far away from Player Car at bottom) -->
+        <div id="pipContainer" class="absolute top-2.5 left-2.5 z-20 w-24 sm:w-32 aspect-[4/3] rounded-xl overflow-hidden border border-cyan-500/40 bg-slate-950/90 shadow-xl transition-all duration-200">
+            <video id="webcamVideo" class="hidden" playsinline webkit-playsinline muted></video>
+            <canvas id="faceCanvas" class="w-full h-full object-cover"></canvas>
+
+            <!-- Camera Off Mini Overlay -->
+            <div id="camPlaceholder" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-1 text-center">
+                <i class="ph-duotone ph-webcam text-xl text-cyan-400"></i>
+                <span class="text-[9px] font-bold text-slate-300 leading-tight mt-0.5">タッチ操作中</span>
+            </div>
+
+            <!-- Status Dot -->
+            <div class="absolute top-1 left-1.5 flex items-center gap-1 bg-slate-950/75 px-1.5 py-0.5 rounded text-[8px] font-bold text-cyan-300">
+                <span id="aiStatusDot" class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span id="faceTrackStatus">待機中</span>
+            </div>
+
+            <!-- Tap to toggle PiP size -->
+            <button id="togglePipSizeBtn" class="absolute bottom-1 right-1 w-5 h-5 rounded bg-slate-900/80 text-slate-300 flex items-center justify-center text-[10px] border border-slate-700" title="ワイプサイズ切替">
+                <i class="ph-bold ph-arrows-out-simple"></i>
+            </button>
+        </div>
+
+        <!-- Quick Floating Center Reset Pill (Visible when camera is active for effortless iPhone thumb tap) -->
+        <button id="floatingCalibrateBtn" class="hidden absolute top-2.5 right-2.5 z-20 px-3 py-1.5 rounded-full bg-slate-900/85 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-[11px] font-bold flex items-center gap-1 shadow-lg active:scale-95">
+            <i class="ph-bold ph-crosshair"></i>
+            <span>正面0°合わせ</span>
+        </button>
+
+        <!-- Start / Game Over Full-Screen Overlay Modal -->
+        <div id="gameOverlay" class="absolute inset-0 z-30 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-2xl shadow-cyan-500/40 mb-3">
+                <i class="ph-fill ph-car-profile text-3xl text-slate-950"></i>
+            </div>
+            <h1 id="overlayTitle" class="text-2xl sm:text-3xl font-black tracking-tight text-white mb-1.5">FACE DRIVE GP</h1>
+            <p id="overlaySubtitle" class="text-xs sm:text-sm text-slate-300 max-w-xs sm:max-w-md mb-4 leading-relaxed">
+                <span class="text-cyan-400 font-bold">頭を傾けて</span>ハンドル操作！<br>
+                <span class="text-emerald-400 font-bold">口を開けるとアクセル</span>、<span class="text-rose-400 font-bold">閉じるとブレーキ</span>。<br>
+                <span class="text-[11px] text-slate-400">（カメラなしでも画面スワイプでそのまま遊べます）</span>
+            </p>
+
+            <!-- Final Score Box -->
+            <div id="finalScoreBox" class="hidden mb-4 px-5 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-700">
+                <div class="text-[10px] text-slate-400 font-bold">FINAL SCORE (BEST: <span id="hudBest">0</span>)</div>
+                <div id="finalScoreVal" class="text-2xl font-black mono text-amber-400 mt-0.5">0</div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full max-w-xs sm:max-w-md">
+                <button id="playWithCamBtn" class="w-full sm:w-auto flex-1 py-3.5 px-5 rounded-2xl font-black text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2 active:scale-95 transition">
+                    <i class="ph-bold ph-webcam text-lg"></i>
+                    <span>顔カメラでスタート</span>
+                </button>
+                <button id="playNowBtn" class="w-full sm:w-auto py-3.5 px-5 rounded-2xl font-bold text-xs sm:text-sm bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition">
+                    <i class="ph-bold ph-hand-tap text-cyan-400 text-base"></i>
+                    <span>タッチ操作で開始</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- 3. BOTTOM COCKPIT TELEMETRY BAR (Placed below canvas so it NEVER covers the player's car!) -->
+    <footer class="glass-bar safe-bottom pt-2 border-t border-slate-800/90 z-30 shrink-0">
+        <div class="max-w-5xl mx-auto grid grid-cols-12 items-center gap-2 sm:gap-4">
+
+            <!-- Left 7 Cols: Steering Wheel & Tilt Gauge -->
+            <div class="col-span-7 flex items-center gap-2.5 bg-slate-900/90 border border-slate-800/90 rounded-xl px-2.5 py-1.5">
+                <div class="relative w-9 h-9 rounded-full bg-slate-950 border border-slate-700 flex items-center justify-center shrink-0">
+                    <div id="wheelIconWrap" class="transition-transform duration-75">
+                        <i class="ph-duotone ph-steering-wheel text-2xl text-cyan-400"></i>
+                    </div>
+                    <div class="absolute -top-0.5 w-1 h-2 bg-rose-500 rounded-full"></div>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between text-[10px] font-bold mb-1">
+                        <span class="text-slate-400 truncate">HANDLE <span id="steerModeBadge" class="text-cyan-400">(反転)</span></span>
+                        <span id="hudSteerAngle" class="mono text-white">0.0°</span>
+                    </div>
+                    <!-- Bidirectional Tilt Bar -->
+                    <div class="relative w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                        <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-slate-500 z-10"></div>
+                        <div id="steerGaugeFill" class="absolute top-0 bottom-0 bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-75" style="left: 50%; width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right 5 Cols: Mouth Pedal Status (Brake vs Accel/Turbo) -->
+            <div class="col-span-5 flex items-center gap-1.5">
+                <!-- Brake Pill -->
+                <div id="pedalBrakeBox" class="flex-1 py-1.5 px-2 rounded-xl border border-rose-500/60 bg-rose-500/25 text-rose-200 flex flex-col items-center justify-center transition-all">
+                    <span class="text-[10px] font-black tracking-wider leading-none">BRAKE</span>
+                    <span class="text-[8px] opacity-80 mt-0.5">口を閉じる</span>
+                </div>
+
+                <!-- Accel / Mouth Open Pill -->
+                <div id="pedalAccelBox" class="flex-1 py-1.5 px-2 rounded-xl border border-slate-800 bg-slate-900/70 text-slate-500 flex flex-col items-center justify-center transition-all relative overflow-hidden">
+                    <div id="mouthGaugeFill" class="absolute bottom-0 left-0 top-0 bg-emerald-500/20 transition-all duration-75" style="width: 0%;"></div>
+                    <span id="pedalAccelLabel" class="relative z-10 text-[10px] font-black tracking-wider leading-none">ACCEL</span>
+                    <span id="mouthOpenText" class="relative z-10 text-[8px] mono mt-0.5">口: 0%</span>
+                </div>
+            </div>
+
+        </div>
+    </footer>
+
+    <!-- 4. SETTINGS & CALIBRATION DRAWER (Hidden during race so screen stays clutter-free) -->
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 safe-bottom space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <i class="ph-fill ph-sliders-horizontal text-cyan-400 text-lg"></i>
+                    <h2 class="text-sm font-black text-white">コントローラー＆画面設定</h2>
+                </div>
+                <button id="closeSettingsBtn" class="w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center active:scale-95">
+                    <i class="ph-bold ph-x"></i>
+                </button>
+            </div>
+
+            <!-- Steering Direction Inversion -->
+            <div class="flex items-center justify-between bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
+                <div>
+                    <div class="text-xs font-bold text-white">頭の傾きとハンドルの向き</div>
+                    <div id="steerDirDesc" class="text-[11px] text-cyan-400 mt-0.5">現在: 反転モード（逆方向ハンドル）</div>
+                </div>
+                <button id="invertSteerBtn" class="px-3 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 active:scale-95">
+                    <i class="ph-bold ph-arrows-left-right"></i>
+                    <span>左右反転</span>
+                </button>
+            </div>
+
+            <!-- Steering Sensitivity -->
+            <div class="bg-slate-950/70 p-3 rounded-2xl border border-slate-800 space-y-2">
+                <div class="flex justify-between text-xs font-bold">
+                    <span class="text-slate-200">ハンドル感度（顔の傾き倍率）</span>
+                    <span id="steerSensVal" class="mono text-cyan-400">1.3x</span>
+                </div>
+                <input id="steerSensSlider" type="range" min="5" max="25" value="13" class="w-full">
+            </div>
+
+            <!-- Mouth Accel Threshold -->
+            <div class="bg-slate-950/70 p-3 rounded-2xl border border-slate-800 space-y-2">
+                <div class="flex justify-between text-xs font-bold">
+                    <span class="text-slate-200">口のアクセル反応しきい値</span>
+                    <span id="mouthThreshVal" class="mono text-emerald-400">22%</span>
+                </div>
+                <input id="mouthThreshSlider" type="range" min="10" max="45" value="22" class="w-full">
+                <p class="text-[10px] text-slate-400">※口を閉じていても加速してしまう場合は数値を上げてください</p>
+            </div>
+
+            <!-- Quick Utility Buttons -->
+            <div class="grid grid-cols-3 gap-2 pt-1">
+                <button id="soundToggleBtn" class="py-2.5 px-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 text-xs font-bold flex flex-col items-center gap-1 active:scale-95">
+                    <i id="soundIcon" class="ph-bold ph-speaker-high text-emerald-400 text-lg"></i>
+                    <span>サウンド</span>
+                </button>
+                <button id="togglePrivacyBtn" class="py-2.5 px-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 text-xs font-bold flex flex-col items-center gap-1 active:scale-95">
+                    <i class="ph-bold ph-eye text-cyan-400 text-lg"></i>
+                    <span>カメラ背景</span>
+                </button>
+                <button id="restartBtn" class="py-2.5 px-2 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold flex flex-col items-center gap-1 active:scale-95">
+                    <i class="ph-bold ph-arrow-counter-clockwise text-rose-400 text-lg"></i>
+                    <span>リスタート</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 pointer-events-none w-11/12 max-w-sm"></div>
+
+    <script type="module">
+        import {
+            FaceLandmarker,
+            FilesetResolver,
+            DrawingUtils
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+        // --- Toast Helper ---
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const styles = {
+                info: 'border-cyan-500/50 bg-slate-900/95 text-cyan-200',
+                success: 'border-emerald-500/50 bg-slate-900/95 text-emerald-200',
+                warn: 'border-amber-500/50 bg-slate-900/95 text-amber-200'
+            };
+            toast.className = `px-3.5 py-2 rounded-full border shadow-xl text-[11px] font-bold flex items-center gap-1.5 backdrop-blur-md transition-all duration-300 ${styles[type] || styles.info}`;
+            toast.innerHTML = `<i class="ph-fill ph-sparkle text-sm shrink-0"></i><span class="truncate">${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-6px)';
+                setTimeout(() => toast.remove(), 250);
+            }, 2400);
+        }
+
+        // --- iOS-Compatible Web Audio Synthesizer ---
+        class SoundController {
+            constructor() {
+                this.ctx = null;
+                this.engineOsc = null;
+                this.engineGain = null;
+                this.enabled = true;
+            }
+            init() {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!this.ctx) {
+                    this.ctx = new AudioCtx();
+                    this.engineOsc = this.ctx.createOscillator();
+                    this.engineGain = this.ctx.createGain();
+                    this.engineOsc.type = 'sawtooth';
+                    this.engineOsc.frequency.value = 55;
+                    this.engineGain.gain.value = 0.0;
+                    this.engineOsc.connect(this.engineGain);
+                    this.engineGain.connect(this.ctx.destination);
+                    this.engineOsc.start();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+            updateEngine(speedRatio, isPlaying) {
+                if (!this.ctx || !this.enabled || !isPlaying) {
+                    if (this.engineGain && this.ctx) {
+                        this.engineGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+                    }
+                    return;
+                }
+                const now = this.ctx.currentTime;
+                const targetFreq = 52 + speedRatio * 150;
+                this.engineOsc.frequency.setTargetAtTime(targetFreq, now, 0.06);
+                this.engineGain.gain.setTargetAtTime(0.03 + speedRatio * 0.035, now, 0.06);
+            }
+            playCoin() {
+                if (!this.ctx || !this.enabled) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                const now = this.ctx.currentTime;
+                osc.frequency.setValueAtTime(587.33, now);
+                osc.frequency.setValueAtTime(880, now + 0.06);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.22);
+            }
+            playCrash() {
+                if (!this.ctx || !this.enabled) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                const now = this.ctx.currentTime;
+                osc.frequency.setValueAtTime(135, now);
+                osc.frequency.exponentialRampToValueAtTime(30, now + 0.28);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            }
+        }
+        const sound = new SoundController();
+
+        const state = {
+            isCameraRunning: false,
+            showVideoBg: true,
+            pipLarge: false,
+            isPlaying: false,
+            isGameOver: false,
+
+            // Face control parameters
+            rawRollAngle: 0,
+            calibratedRollOffset: 0,
+            steerInvert: -1, // Reversed head tilt to steering direction
+            steerAngle: 0,
+            steerInput: 0,
+            steerSensitivity: 1.3,
+
+            rawMouthOpen: 0,
+            smoothedMouthOpen: 0,
+            mouthThreshold: 0.22,
+
+            // Touch / Key Fallback
+            keyLeft: false,
+            keyRight: false,
+            keyAccel: false,
+            pointerSteer: 0,
+            pointerActive: false,
+            pointerDown: false,
+
+            // Driving Physics
+            speed: 0,
+            maxSpeed: 280,
+            turboSpeed: 340,
+            score: 0,
+            bestScore: parseInt(localStorage.getItem('faceDriveBest') || '0', 10),
+            distanceKm: 0,
+            shield: 100,
+
+            // Player Car
+            carX: 0,
+            carVisualTilt: 0,
+
+            // World Entities
+            roadOffset: 0,
+            traffic: [],
+            coins: [],
+            particles: []
+        };
+
+        document.getElementById('hudBest').textContent = state.bestScore.toLocaleString();
+
+        const gameCanvas = document.getElementById('gameCanvas');
+        const ctx = gameCanvas.getContext('2d');
+        const faceCanvas = document.getElementById('faceCanvas');
+        const faceCtx = faceCanvas.getContext('2d');
+        const webcamVideo = document.getElementById('webcamVideo');
+
+        let faceLandmarker = null;
+        let drawingUtils = null;
+
+        async function initFaceLandmarker() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+                );
+                faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                        delegate: "GPU"
+                    },
+                    outputFaceBlendshapes: true,
+                    runningMode: "VIDEO",
+                    numFaces: 1
+                });
+                drawingUtils = new DrawingUtils(faceCtx);
+                document.getElementById('aiStatusDot').className = "w-1.5 h-1.5 rounded-full bg-emerald-400";
+                document.getElementById('faceTrackStatus').textContent = "AI準備OK";
+            } catch (err) {
+                console.warn("MediaPipe init fallback:", err);
+                document.getElementById('faceTrackStatus').textContent = "タッチモード";
+            }
+        }
+        initFaceLandmarker();
+
+        // --- iPhone Front Camera Activation ---
+        async function startCamera() {
+            if (state.isCameraRunning) return true;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: 480 },
+                        height: { ideal: 360 }
+                    },
+                    audio: false
+                });
+                webcamVideo.srcObject = stream;
+                await webcamVideo.play();
+
+                faceCanvas.width = webcamVideo.videoWidth || 480;
+                faceCanvas.height = webcamVideo.videoHeight || 360;
+
+                state.isCameraRunning = true;
+                document.getElementById('camPlaceholder').classList.add('hidden');
+                document.getElementById('floatingCalibrateBtn').classList.remove('hidden');
+                document.getElementById('startCamText').textContent = "カメラ停止";
+                document.getElementById('startCamBtn').className = "h-9 px-2.5 rounded-xl bg-rose-600 text-white shadow-md flex items-center gap-1 text-xs font-bold transition active:scale-95";
+                showToast("顔操作ON！頭を傾けてハンドル、口を開けてアクセル", "success");
+                return true;
+            } catch (err) {
+                showToast("カメラ未許可のため画面スワイプ操作で開始します", "warn");
+                return false;
+            }
+        }
+
+        function stopCamera() {
+            if (webcamVideo.srcObject) {
+                webcamVideo.srcObject.getTracks().forEach(t => t.stop());
+                webcamVideo.srcObject = null;
+            }
+            state.isCameraRunning = false;
+            document.getElementById('camPlaceholder').classList.remove('hidden');
+            document.getElementById('floatingCalibrateBtn').classList.add('hidden');
+            document.getElementById('startCamText').textContent = "カメラON";
+            document.getElementById('startCamBtn').className = "h-9 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md flex items-center gap-1 text-xs font-bold transition active:scale-95";
+        }
+
+        function processFaceFrame(results) {
+            const w = faceCanvas.width;
+            const h = faceCanvas.height;
+            faceCtx.save();
+            faceCtx.clearRect(0, 0, w, h);
+
+            faceCtx.translate(w, 0);
+            faceCtx.scale(-1, 1);
+
+            if (state.showVideoBg) {
+                faceCtx.drawImage(webcamVideo, 0, 0, w, h);
+                faceCtx.fillStyle = "rgba(5, 8, 17, 0.35)";
+                faceCtx.fillRect(0, 0, w, h);
+            } else {
+                faceCtx.fillStyle = "#050811";
+                faceCtx.fillRect(0, 0, w, h);
+            }
+
+            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                const lm = results.faceLandmarks[0];
+
+                if (drawingUtils) {
+                    drawingUtils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, { color: "#38bdf8", lineWidth: 1.5 });
+                    drawingUtils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, { color: "#38bdf8", lineWidth: 1.5 });
+                    drawingUtils.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_LIPS, {
+                        color: state.smoothedMouthOpen >= state.mouthThreshold ? "#10b981" : "#f43f5e",
+                        lineWidth: 2
+                    });
+                }
+
+                // Head Roll Angle Calculation
+                const leftEye = lm[33];
+                const rightEye = lm[263];
+                const dx = (rightEye.x - leftEye.x) * w;
+                const dy = (rightEye.y - leftEye.y) * h;
+                const rawRoll = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                const noseTip = lm[1];
+                const forehead = lm[10];
+                const chin = lm[152];
+                const noseTilt = ((noseTip.x - (forehead.x + chin.x) * 0.5) * 95);
+
+                state.rawRollAngle = (rawRoll * 0.8 + noseTilt * 0.2) * state.steerInvert;
+
+                // Eye Horizon Line
+                faceCtx.strokeStyle = "#22d3ee";
+                faceCtx.lineWidth = 2;
+                faceCtx.beginPath();
+                faceCtx.moveTo(rightEye.x * w, rightEye.y * h);
+                faceCtx.lineTo(leftEye.x * w, leftEye.y * h);
+                faceCtx.stroke();
+
+                // Mouth Open Calculation
+                let blendJaw = 0;
+                if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
+                    const cats = results.faceBlendshapes[0].categories;
+                    const jawItem = cats.find(c => c.categoryName === 'jawOpen');
+                    if (jawItem) blendJaw = jawItem.score;
+                }
+
+                const upperLip = lm[13];
+                const lowerLip = lm[14];
+                const faceHeight = Math.hypot((chin.x - forehead.x) * w, (chin.y - forehead.y) * h) || 1;
+                const lipGap = Math.hypot((lowerLip.x - upperLip.x) * w, (lowerLip.y - upperLip.y) * h);
+                const geoMouthOpen = Math.min(1, Math.max(0, (lipGap / faceHeight - 0.015) * 5.2));
+
+                state.rawMouthOpen = Math.min(1, Math.max(blendJaw * 1.15, geoMouthOpen));
+                document.getElementById('faceTrackStatus').textContent = "認識中";
+            } else {
+                state.rawMouthOpen *= 0.85;
+                document.getElementById('faceTrackStatus').textContent = "顔検出外";
+            }
+
+            faceCtx.restore();
+        }
+
+        function getPlayerScreenY(canvasHeight) {
+            // Position player car comfortably above the bottom edge of the dedicated game canvas
+            return canvasHeight - Math.max(85, Math.min(130, canvasHeight * 0.16));
+        }
+
+        function resetGame() {
+            state.speed = 0;
+            state.score = 0;
+            state.distanceKm = 0;
+            state.shield = 100;
+            state.carX = 0;
+            state.carVisualTilt = 0;
+            state.traffic = [];
+            state.coins = [];
+            state.particles = [];
+            state.isGameOver = false;
+            state.isPlaying = true;
+            document.getElementById('gameOverlay').classList.add('hidden');
+            sound.init();
+        }
+
+        function spawnTrafficCar() {
+            const lanes = [-0.65, -0.22, 0.22, 0.65];
+            const lane = lanes[Math.floor(Math.random() * lanes.length)];
+            if (state.traffic.some(t => t.y < 150 && Math.abs(t.lane - lane) < 0.2)) return;
+
+            const colors = ['#f43f5e', '#a855f7', '#eab308', '#3b82f6', '#ec4899', '#14b8a6'];
+            state.traffic.push({
+                lane,
+                y: -100,
+                speed: 85 + Math.random() * 85,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                width: 40,
+                height: 76,
+                passed: false
+            });
+        }
+
+        function spawnCoin() {
+            const lanes = [-0.65, -0.22, 0.22, 0.65];
+            const lane = lanes[Math.floor(Math.random() * lanes.length)];
+            state.coins.push({
+                lane,
+                y: -60,
+                radius: 14,
+                spin: 0
+            });
+        }
+
+        function createBurstParticles(x, y, color, count = 14) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 2 + Math.random() * 5.5;
+                state.particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd,
+                    life: 1.0,
+                    color
+                });
+            }
+        }
+
+        function updatePhysics(dt, logicalWidth, logicalHeight) {
+            if (state.isCameraRunning) {
+                const calibratedRoll = (state.rawRollAngle - state.calibratedRollOffset) * state.steerSensitivity;
+                state.steerAngle += (calibratedRoll - state.steerAngle) * 0.25;
+                state.smoothedMouthOpen += (state.rawMouthOpen - state.smoothedMouthOpen) * 0.3;
+            } else {
+                let targetAngle = 0;
+                if (state.keyLeft) targetAngle = -26;
+                else if (state.keyRight) targetAngle = 26;
+                else if (state.pointerActive) targetAngle = state.pointerSteer * 30;
+
+                state.steerAngle += (targetAngle - state.steerAngle) * 0.22;
+                const targetMouth = (state.keyAccel || state.pointerDown) ? 0.8 : 0.04;
+                state.smoothedMouthOpen += (targetMouth - state.smoothedMouthOpen) * 0.25;
+            }
+
+            const clampedAngle = Math.max(-35, Math.min(35, state.steerAngle));
+            const effectiveAngle = Math.abs(clampedAngle) < 2.0 ? 0 : clampedAngle;
+            state.steerInput = effectiveAngle / 30;
+
+            const isAccelerating = state.smoothedMouthOpen >= state.mouthThreshold;
+            const isTurbo = state.smoothedMouthOpen >= Math.min(0.85, state.mouthThreshold + 0.35);
+
+            updateControllerHUD(clampedAngle, isAccelerating, isTurbo);
+
+            if (!state.isPlaying) return;
+
+            if (isAccelerating) {
+                const openPower = Math.min(1, (state.smoothedMouthOpen - state.mouthThreshold) / (1 - state.mouthThreshold));
+                const targetMax = isTurbo ? state.turboSpeed : (140 + openPower * (state.maxSpeed - 140));
+                const accelRate = isTurbo ? 165 : (95 + openPower * 55);
+                if (state.speed < targetMax) {
+                    state.speed = Math.min(targetMax, state.speed + accelRate * dt);
+                } else {
+                    state.speed = Math.max(targetMax, state.speed - 60 * dt);
+                }
+            } else {
+                state.speed = Math.max(0, state.speed - 210 * dt);
+            }
+
+            const steerMobility = 0.35 + Math.min(1, state.speed / 120) * 0.65;
+            state.carX += state.steerInput * 1.65 * steerMobility * dt;
+            state.carVisualTilt += (state.steerInput * 0.38 - state.carVisualTilt) * 0.2;
+
+            if (Math.abs(state.carX) > 0.85) {
+                state.carX = Math.sign(state.carX) * Math.min(1.0, Math.abs(state.carX));
+                state.speed = Math.max(0, state.speed - 90 * dt);
+            }
+
+            const pixelSpeed = state.speed * 3.3;
+            state.roadOffset = (state.roadOffset + pixelSpeed * dt) % 90;
+            state.distanceKm += (state.speed / 3600) * dt * 8;
+            state.score += Math.round(state.speed * dt * (isTurbo ? 2.2 : 1.0));
+
+            sound.updateEngine(state.speed / state.turboSpeed, state.isPlaying);
+
+            if (state.speed > 30) {
+                if (Math.random() < dt * (1.15 + state.speed / 190)) spawnTrafficCar();
+                if (Math.random() < dt * 1.35) spawnCoin();
+            }
+
+            const roadWidth = Math.min(logicalWidth * 0.84, 480);
+            const roadCenterX = logicalWidth / 2;
+            const playerScreenX = roadCenterX + state.carX * (roadWidth * 0.5);
+            const playerScreenY = getPlayerScreenY(logicalHeight);
+
+            // Traffic Collision & Movement
+            for (let i = state.traffic.length - 1; i >= 0; i--) {
+                const t = state.traffic[i];
+                const relSpeed = (state.speed - t.speed) * 3.3;
+                t.y += relSpeed * dt;
+
+                const tScreenX = roadCenterX + t.lane * (roadWidth * 0.5);
+
+                if (
+                    Math.abs(playerScreenX - tScreenX) < 34 &&
+                    Math.abs(playerScreenY - t.y) < 66
+                ) {
+                    sound.playCrash();
+                    createBurstParticles(playerScreenX, playerScreenY - 25, '#f43f5e', 20);
+                    state.shield = Math.max(0, state.shield - 34);
+                    state.speed *= 0.35;
+                    state.traffic.splice(i, 1);
+
+                    if (state.shield <= 0) {
+                        triggerGameOver();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (!t.passed && t.y > playerScreenY + 40) {
+                    t.passed = true;
+                    if (Math.abs(playerScreenX - tScreenX) < 62) {
+                        state.score += 250;
+                        createBurstParticles(playerScreenX, playerScreenY, '#38bdf8', 7);
+                    }
+                }
+
+                if (t.y > logicalHeight + 140 || t.y < -240) {
+                    state.traffic.splice(i, 1);
+                }
+            }
+
+            // Coins
+            for (let i = state.coins.length - 1; i >= 0; i--) {
+                const c = state.coins[i];
+                c.y += pixelSpeed * dt;
+                c.spin += dt * 6;
+                const cScreenX = roadCenterX + c.lane * (roadWidth * 0.5);
+
+                if (Math.hypot(playerScreenX - cScreenX, playerScreenY - c.y) < 38) {
+                    sound.playCoin();
+                    state.score += 500;
+                    state.shield = Math.min(100, state.shield + 6);
+                    createBurstParticles(cScreenX, c.y, '#facc15', 12);
+                    state.coins.splice(i, 1);
+                    continue;
+                }
+
+                if (c.y > logicalHeight + 60) {
+                    state.coins.splice(i, 1);
+                }
+            }
+
+            // Particles
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                const p = state.particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= dt * 2.3;
+                if (p.life <= 0) state.particles.splice(i, 1);
+            }
+        }
+
+        function updateControllerHUD(angle, isAccelerating, isTurbo) {
+            const roundedAngle = angle.toFixed(1);
+            document.getElementById('hudSteerAngle').textContent = `${roundedAngle}°`;
+            document.getElementById('wheelIconWrap').style.transform = `rotate(${angle * 2.2}deg)`;
+
+            const steerFill = document.getElementById('steerGaugeFill');
+            const pct = Math.min(50, Math.abs(angle) / 35 * 50);
+            if (angle < 0) {
+                steerFill.style.left = `${50 - pct}%`;
+                steerFill.style.width = `${pct}%`;
+            } else {
+                steerFill.style.left = `50%`;
+                steerFill.style.width = `${pct}%`;
+            }
+
+            const mouthPct = Math.round(state.smoothedMouthOpen * 100);
+            document.getElementById('mouthOpenText').textContent = `口: ${mouthPct}%`;
+            document.getElementById('mouthGaugeFill').style.width = `${mouthPct}%`;
+
+            const brakeBox = document.getElementById('pedalBrakeBox');
+            const accelBox = document.getElementById('pedalAccelBox');
+            const accelLabel = document.getElementById('pedalAccelLabel');
+
+            if (isAccelerating) {
+                brakeBox.className = "flex-1 py-1.5 px-2 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 flex flex-col items-center justify-center transition-all";
+                if (isTurbo) {
+                    accelBox.className = "flex-1 py-1.5 px-2 rounded-xl border border-cyan-400 bg-cyan-500/30 text-cyan-100 shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center transition-all relative overflow-hidden";
+                    accelLabel.textContent = "TURBO!!";
+                } else {
+                    accelBox.className = "flex-1 py-1.5 px-2 rounded-xl border border-emerald-500/60 bg-emerald-500/25 text-emerald-200 flex flex-col items-center justify-center transition-all relative overflow-hidden";
+                    accelLabel.textContent = "ACCEL";
+                }
+            } else {
+                brakeBox.className = "flex-1 py-1.5 px-2 rounded-xl border border-rose-500/60 bg-rose-500/30 text-rose-200 flex flex-col items-center justify-center transition-all";
+                accelBox.className = "flex-1 py-1.5 px-2 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 flex flex-col items-center justify-center transition-all relative overflow-hidden";
+                accelLabel.textContent = "ACCEL";
+            }
+
+            document.getElementById('hudSpeed').textContent = Math.round(state.speed);
+            document.getElementById('hudScore').textContent = state.score.toLocaleString();
+            document.getElementById('hudDistance').textContent = `${state.distanceKm.toFixed(1)}km`;
+            document.getElementById('hudShieldText').textContent = `${Math.round(state.shield)}%`;
+            document.getElementById('hudShieldBar').style.width = `${state.shield}%`;
+        }
+
+        function triggerGameOver() {
+            state.isPlaying = false;
+            state.isGameOver = true;
+            sound.updateEngine(0, false);
+
+            if (state.score > state.bestScore) {
+                state.bestScore = state.score;
+                localStorage.setItem('faceDriveBest', String(state.bestScore));
+            }
+            document.getElementById('hudBest').textContent = state.bestScore.toLocaleString();
+            document.getElementById('overlayTitle').textContent = "CRASH! GAME OVER";
+            document.getElementById('finalScoreBox').classList.remove('hidden');
+            document.getElementById('finalScoreVal').textContent = state.score.toLocaleString();
+            document.getElementById('gameOverlay').classList.remove('hidden');
+        }
+
+        function renderGame(logicalWidth, logicalHeight) {
+            const w = logicalWidth;
+            const h = logicalHeight;
+            ctx.clearRect(0, 0, w, h);
+
+            const roadWidth = Math.min(w * 0.84, 480);
+            const roadLeft = (w - roadWidth) / 2;
+            const roadRight = roadLeft + roadWidth;
+            const roadCenterX = w / 2;
+
+            // 1. Cyber Roadside Grid
+            ctx.fillStyle = "#050914";
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.strokeStyle = "rgba(6, 182, 212, 0.12)";
+            ctx.lineWidth = 1;
+            for (let y = (state.roadOffset % 90) - 90; y < h; y += 90) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(roadLeft, y);
+                ctx.moveTo(roadRight, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            // 2. Highway Asphalt
+            const roadGrad = ctx.createLinearGradient(roadLeft, 0, roadRight, 0);
+            roadGrad.addColorStop(0, "#0f172a");
+            roadGrad.addColorStop(0.5, "#1e293b");
+            roadGrad.addColorStop(1, "#0f172a");
+            ctx.fillStyle = roadGrad;
+            ctx.fillRect(roadLeft, 0, roadWidth, h);
+
+            // 3. Curbs
+            const curbWidth = 9;
+            for (let y = (state.roadOffset % 90) - 90; y < h; y += 45) {
+                const isAlt = Math.floor((y - state.roadOffset) / 45) % 2 === 0;
+                ctx.fillStyle = isAlt ? "#06b6d4" : "#f8fafc";
+                ctx.fillRect(roadLeft - curbWidth, y, curbWidth, 45);
+                ctx.fillRect(roadRight, y, curbWidth, 45);
+            }
+
+            // 4. Lane Lines
+            ctx.strokeStyle = "rgba(248, 250, 252, 0.32)";
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([32, 48]);
+            ctx.lineDashOffset = -state.roadOffset;
+
+            [-0.43, 0, 0.43].forEach((offsetRatio) => {
+                const lx = roadCenterX + offsetRatio * (roadWidth * 0.5);
+                ctx.beginPath();
+                ctx.moveTo(lx, 0);
+                ctx.lineTo(lx, h);
+                ctx.stroke();
+            });
+            ctx.setLineDash([]);
+
+            // 5. Coins
+            for (const c of state.coins) {
+                const cx = roadCenterX + c.lane * (roadWidth * 0.5);
+                ctx.save();
+                ctx.translate(cx, c.y);
+                ctx.scale(Math.cos(c.spin), 1);
+                ctx.fillStyle = "#facc15";
+                ctx.shadowColor = "#eab308";
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(0, 0, c.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "#fef08a";
+                ctx.beginPath();
+                ctx.arc(0, 0, c.radius * 0.55, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 6. Traffic Cars
+            for (const t of state.traffic) {
+                const tx = roadCenterX + t.lane * (roadWidth * 0.5);
+                drawTopViewCar(tx, t.y, t.width, t.height, t.color, 0, false, false, false);
+            }
+
+            // 7. Player Car (100% Unobstructed in dedicated canvas!)
+            const playerX = roadCenterX + state.carX * (roadWidth * 0.5);
+            const playerY = getPlayerScreenY(h);
+            const isBraking = state.smoothedMouthOpen < state.mouthThreshold && state.speed > 5;
+            const isBoosting = state.smoothedMouthOpen >= state.mouthThreshold && state.speed > 40;
+
+            // Subtle halo ring under player car for instant visual tracking on iPhone screen
+            ctx.save();
+            ctx.strokeStyle = "rgba(34, 211, 238, 0.28)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(playerX, playerY + 4, 32, 48, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            drawTopViewCar(playerX, playerY, 42, 80, "#06b6d4", state.carVisualTilt, isBraking, isBoosting, true);
+
+            // 8. Particles
+            for (const p of state.particles) {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function drawTopViewCar(x, y, w, h, color, tiltAngle, isBraking, isBoosting, isPlayer) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(tiltAngle);
+
+            if (isBoosting) {
+                const flameLen = 16 + Math.random() * 20;
+                const grad = ctx.createLinearGradient(0, h / 2, 0, h / 2 + flameLen);
+                grad.addColorStop(0, "#22d3ee");
+                grad.addColorStop(0.5, "#3b82f6");
+                grad.addColorStop(1, "transparent");
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.moveTo(-9, h / 2 - 2);
+                ctx.lineTo(0, h / 2 + flameLen);
+                ctx.lineTo(9, h / 2 - 2);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            if (isBraking) {
+                ctx.fillStyle = "rgba(244, 63, 94, 0.85)";
+                ctx.shadowColor = "#f43f5e";
+                ctx.shadowBlur = 16;
+                ctx.fillRect(-w / 2 + 4, h / 2 - 3, 9, 5);
+                ctx.fillRect(w / 2 - 13, h / 2 - 3, 9, 5);
+                ctx.shadowBlur = 0;
+            }
+
+            // Tires
+            ctx.fillStyle = "#090d16";
+            ctx.fillRect(-w / 2 - 2.5, -h / 2 + 10, 5, 14);
+            ctx.fillRect(w / 2 - 2.5, -h / 2 + 10, 5, 14);
+            ctx.fillRect(-w / 2 - 2.5, h / 2 - 24, 5, 14);
+            ctx.fillRect(w / 2 - 2.5, h / 2 - 24, 5, 14);
+
+            // Chassis
+            ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(-w / 2, -h / 2, w, h, 11);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Stripe
+            ctx.fillStyle = isPlayer ? "rgba(255, 255, 255, 0.35)" : "rgba(255, 255, 255, 0.2)";
+            ctx.fillRect(-3.5, -h / 2 + 4, 7, h - 8);
+
+            // Cabin
+            ctx.fillStyle = "#0f172a";
+            ctx.beginPath();
+            ctx.roundRect(-w / 2 + 5, -h / 2 + 18, w - 10, h * 0.44, 5);
+            ctx.fill();
+
+            // Headlights
+            ctx.fillStyle = "#fef08a";
+            ctx.fillRect(-w / 2 + 4, -h / 2 + 1, 8, 3.5);
+            ctx.fillRect(w / 2 - 12, -h / 2 + 1, 8, 3.5);
+
+            ctx.restore();
+        }
+
+        function calibrateCenter() {
+            state.calibratedRollOffset = state.rawRollAngle;
+            state.steerAngle = 0;
+            showToast("現在の顔の角度を正面(0°)にセットしました", "success");
+        }
+
+        document.getElementById('calibrateBtn').addEventListener('click', calibrateCenter);
+        document.getElementById('floatingCalibrateBtn').addEventListener('click', calibrateCenter);
+
+        document.getElementById('startCamBtn').addEventListener('click', () => {
+            if (state.isCameraRunning) stopCamera();
+            else startCamera();
+        });
+
+        document.getElementById('playWithCamBtn').addEventListener('click', async () => {
+            sound.init();
+            await startCamera();
+            resetGame();
+        });
+
+        document.getElementById('playNowBtn').addEventListener('click', () => {
+            sound.init();
+            resetGame();
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            document.getElementById('settingsModal').classList.add('hidden');
+            resetGame();
+            showToast("リスタートしました！", "info");
+        });
+
+        // Toggle PiP Camera Size on Tap
+        document.getElementById('togglePipSizeBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            state.pipLarge = !state.pipLarge;
+            const pip = document.getElementById('pipContainer');
+            pip.className = state.pipLarge
+                ? "absolute top-2.5 left-2.5 z-20 w-40 sm:w-52 aspect-[4/3] rounded-xl overflow-hidden border border-cyan-400 bg-slate-950/95 shadow-2xl transition-all duration-200"
+                : "absolute top-2.5 left-2.5 z-20 w-24 sm:w-32 aspect-[4/3] rounded-xl overflow-hidden border border-cyan-500/40 bg-slate-950/90 shadow-xl transition-all duration-200";
+        });
+
+        // Settings Drawer Modal
+        const settingsModal = document.getElementById('settingsModal');
+        document.getElementById('openSettingsBtn').addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+        });
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) settingsModal.classList.add('hidden');
+        });
+
+        // Invert Steering Direction
+        document.getElementById('invertSteerBtn').addEventListener('click', () => {
+            state.steerInvert *= -1;
+            state.rawRollAngle *= -1;
+            state.calibratedRollOffset *= -1;
+            state.steerAngle = 0;
+            const isReversed = state.steerInvert === -1;
+            document.getElementById('steerDirDesc').textContent = isReversed
+                ? "現在: 反転モード（逆方向ハンドル）"
+                : "現在: 通常モード（順方向ハンドル）";
+            document.getElementById('steerModeBadge').textContent = isReversed ? "(反転)" : "(通常)";
+            showToast("ハンドルの左右方向を切り替えました", "info");
+        });
+
+        document.getElementById('soundToggleBtn').addEventListener('click', () => {
+            sound.enabled = !sound.enabled;
+            const icon = document.getElementById('soundIcon');
+            icon.className = sound.enabled ? "ph-bold ph-speaker-high text-emerald-400 text-lg" : "ph-bold ph-speaker-slash text-slate-500 text-lg";
+            showToast(sound.enabled ? "サウンド ON" : "サウンド OFF", "info");
+        });
+
+        document.getElementById('togglePrivacyBtn').addEventListener('click', () => {
+            state.showVideoBg = !state.showVideoBg;
+            showToast(state.showVideoBg ? "カメラ映像を表示" : "メッシュのみ表示", "info");
+        });
+
+        document.getElementById('steerSensSlider').addEventListener('input', (e) => {
+            state.steerSensitivity = parseInt(e.target.value, 10) / 10;
+            document.getElementById('steerSensVal').textContent = `${state.steerSensitivity.toFixed(1)}x`;
+        });
+
+        document.getElementById('mouthThreshSlider').addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            state.mouthThreshold = val / 100;
+            document.getElementById('mouthThreshVal').textContent = `${val}%`;
+        });
+
+        // Keyboard Fallback
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.keyLeft = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.keyRight = true;
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                state.keyAccel = true;
+                if (e.key === ' ') e.preventDefault();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.keyLeft = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.keyRight = false;
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') state.keyAccel = false;
+        });
+
+        // Touch / Drag Fallback on Game Canvas for 1-Thumb iPhone Play
+        function updatePointerPos(clientX) {
+            const rect = gameCanvas.getBoundingClientRect();
+            const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+            state.pointerSteer = Math.max(-1, Math.min(1, nx));
+            state.pointerActive = true;
+        }
+        gameCanvas.addEventListener('mousemove', (e) => updatePointerPos(e.clientX));
+        gameCanvas.addEventListener('mousedown', (e) => {
+            sound.init();
+            state.pointerDown = true;
+            updatePointerPos(e.clientX);
+        });
+        window.addEventListener('mouseup', () => { state.pointerDown = false; });
+
+        gameCanvas.addEventListener('touchstart', (e) => {
+            sound.init();
+            state.pointerDown = true;
+            if (e.touches[0]) updatePointerPos(e.touches[0].clientX);
+        }, { passive: true });
+        gameCanvas.addEventListener('touchmove', (e) => {
+            if (e.touches[0]) updatePointerPos(e.touches[0].clientX);
+        }, { passive: true });
+        window.addEventListener('touchend', () => {
+            state.pointerDown = false;
+            state.pointerActive = false;
+        });
+
+        // Retina High-DPI Canvas Resize
+        let logicalW = 360;
+        let logicalH = 640;
+
+        function resizeCanvases() {
+            const rect = gameCanvas.parentElement.getBoundingClientRect();
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            logicalW = rect.width;
+            logicalH = rect.height;
+            gameCanvas.width = logicalW * dpr;
+            gameCanvas.height = logicalH * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener('resize', resizeCanvases);
+        window.addEventListener('orientationchange', () => setTimeout(resizeCanvases, 150));
+
+        let lastTime = performance.now();
+        let lastVideoTime = -1;
+
+        function gameLoop(now) {
+            requestAnimationFrame(gameLoop);
+
+            const dt = Math.min(0.05, (now - lastTime) / 1000);
+            lastTime = now;
+
+            if (state.isCameraRunning && faceLandmarker && webcamVideo.currentTime !== lastVideoTime) {
+                lastVideoTime = webcamVideo.currentTime;
+                const results = faceLandmarker.detectForVideo(webcamVideo, now);
+                processFaceFrame(results);
+            }
+
+            updatePhysics(dt, logicalW, logicalH);
+            renderGame(logicalW, logicalH);
+        }
+
+        window.onload = function () {
+            resizeCanvases();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
